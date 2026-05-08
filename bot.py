@@ -26,17 +26,50 @@ def save_data():
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 # ================== TELEGRAM ==================
-def send_message(text):
-    try:
-        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-        requests.post(url, data={
-            "chat_id": CHAT_ID,
-            "text": text,
-            "disable_web_page_preview": False
-        })
-    except Exception as e:
-        print("Telegram Error:", e)
+USERS_FILE = "users.json"
 
+if os.path.exists(USERS_FILE):
+    with open(USERS_FILE, "r") as f:
+        users = json.load(f)
+else:
+    users = []
+
+def save_users():
+    with open(USERS_FILE, "w") as f:
+        json.dump(users, f)
+
+def get_updates():
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates"
+    response = requests.get(url).json()
+
+    for result in response.get("result", []):
+        message = result.get("message")
+
+        if message:
+            chat_id = str(message["chat"]["id"])
+            text = message.get("text", "")
+
+            if text == "/start":
+                if chat_id not in users:
+                    users.append(chat_id)
+                    save_users()
+
+                    send_private_message(
+                        chat_id,
+                        "✅ You are now subscribed to job alerts!"
+                    )
+
+def send_private_message(chat_id, text):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+
+    requests.post(url, data={
+        "chat_id": chat_id,
+        "text": text
+    })
+
+def send_message_to_all(text):
+    for user in users:
+        send_private_message(user, text)
 # ================== SCRAPING ==================
 def get_nafezly_jobs():
     url = "https://nafezly.com/projects"
@@ -84,7 +117,7 @@ def check_jobs():
 🔗 {job['link']}
 """
 
-            send_message(message)
+            send_message_to_all(message)
 
             data["last_jobs"].append(unique_id)
             data["last_jobs"] = data["last_jobs"][-200:]
@@ -96,7 +129,8 @@ send_message("🤖 Job Bot Started Successfully (PRO MODE)")
 
 while True:
     try:
-        check_jobs()
+        get_updates()
+check_jobs()
         time.sleep(20)
 
     except Exception as e:
