@@ -50,15 +50,30 @@ def get_updates():
             text = message.get("text", "")
 
             if text == "/start":
-                if chat_id not in users:
-                    users.append(chat_id)
-                    save_users()
 
-                    send_private_message(
-                        chat_id,
-                        "✅ You are now subscribed to job alerts!"
-                    )
+    if chat_id not in users:
+        users.append(chat_id)
+        save_users()
 
+        # رسالة للمستخدم
+        send_private_message(
+            chat_id,
+            "✅ You are now subscribed to job alerts!"
+        )
+
+        # إشعار ليك أنت
+        admin_message = f"""
+🚀 New User Joined
+
+👤 User ID: {chat_id}
+📛 Username: @{message['from'].get('username', 'NoUsername')}
+📝 Name: {message['from'].get('first_name', 'Unknown')}
+"""
+
+        send_private_message(
+            "1129385768",
+            admin_message
+        )
 def send_private_message(chat_id, text):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
