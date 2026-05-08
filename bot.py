@@ -125,14 +125,15 @@ def check_jobs():
             save_data()
 
 # ================== START ==================
-send_message("🤖 Job Bot Started Successfully (PRO MODE)")
+ssend_private_message("1129385768", "🤖 Public Job Bot Started Successfully")
 
 while True:
     try:
         get_updates()
-check_jobs()
+        check_jobs()
+
         time.sleep(20)
 
     except Exception as e:
-        print("Error:", e)
+        print("ERROR:", e)
         time.sleep(20)
