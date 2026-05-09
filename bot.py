@@ -3,6 +3,8 @@ import time
 import json
 import requests
 from bs4 import BeautifulSoup
+# === حطه هنا بالظبط ===
+start_time = time.time()
 
 # ================== CONFIG ==================
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
@@ -79,30 +81,28 @@ def fetch_jobs():
 
 # ================== MAIN ENGINE (INSTANT MODE) ==================
 if ADMIN_ID:
-    send_telegram(ADMIN_ID, "🚀 وضع الصيد اللحظي مفعل.. البوت هيبعتلك المشروع أول ما ينزل فوراً.")
+    send_telegram(ADMIN_ID, "🚀 وضع 'صياد اللحظة' اشتغل.. القديم مش هيتبعت نهائياً.")
 
-print("🚀 Newton Global Scraper is RUNNING (Instant Mode)...")
+print("🚀 Newton Scraper: Time-Filter Active...")
 
 while True:
     try:
-        # 1. تحديث قائمة المستخدمين
         check_for_new_users()
-        
-        # 2. جلب المشاريع من المواقع
         found_jobs = fetch_jobs()
         
-        # ترتيب المشاريع من الأقدم للأحدث (عشان يبعت الجديد في الآخر)
-        for job in reversed(found_jobs): 
+        for job in found_jobs:
+            # الفلترة بقت مزدوجة: الرابط مش في الذاكرة + البوت شغال من مدة
             if job["link"] not in data["last_jobs"]:
                 
-                # --- (التطوير المهم هنا) ---
-                # لو البوت لسه فاتح (القائمة فاضية)، هيسجل المشاريع الحالية كأنها "قديمة" 
-                # عشان ميبعتش 50 رسالة Spam أول ما يشتغل.
-                if len(data["last_jobs"]) < 10: 
-                    data["last_jobs"].append(job["link"])
+                # السطر ده هو "الجوكر": لو البوت شغال من أقل من 5 دقائق
+                # بيسجل المشاريع بس مبيبعتش رسايل (بيملى الذاكرة)
+                uptime = time.time() - start_time
+                if uptime < 300: # أول 5 دقائق صمت تام
+                    if job["link"] not in data["last_jobs"]:
+                        data["last_jobs"].append(job["link"])
                     continue
 
-                # إرسال الرسالة فوراً للمشروع الجديد "فقط"
+                # لو عدينا أول 5 دقائق، أي حاجة جديدة هتوصلك فوراً
                 msg = f"🌟 مشروع جديد ({job['source']})\n\n📌 {job['title']}\n🔗 {job['link']}"
                 
                 for user_id in users:
@@ -111,15 +111,10 @@ while True:
                 if ADMIN_ID and ADMIN_ID not in users:
                     send_telegram(ADMIN_ID, msg)
 
-                # حفظ الرابط فوراً في الملف عشان ميتكررش
                 data["last_jobs"].append(job["link"])
-                data["last_jobs"] = data["last_jobs"][-500:] # ذاكرة أكبر لـ 500 مشروع
+                data["last_jobs"] = data["last_jobs"][-500:]
                 save_json(DATA_FILE, data)
-                
-                # تأخير ثانية واحدة بين الرسايل لو فيه كذا مشروع نزلوا مع بعض
-                time.sleep(1)
-
-        # 3. وقت الانتظار (خليته دقيقتين عشان يلقط الشغل أسرع)
+        
         time.sleep(120) 
         
     except Exception as e:
