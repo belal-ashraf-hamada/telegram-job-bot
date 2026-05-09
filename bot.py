@@ -3,124 +3,114 @@ import time
 import json
 import requests
 from bs4 import BeautifulSoup
+from datetime import datetime
 
 # ================== CONFIG (SECURE) ==================
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-CHAT_ID = os.environ.get("CHAT_ID")
+CHAT_ID = os.environ.get("CHAT_ID") 
 
 DATA_FILE = "data.json"
 USERS_FILE = "users.json"
+STATS_FILE = "stats.json"
 
-# ================== SAFE CHECK ==================
-if not BOT_TOKEN or not CHAT_ID:
-    raise Exception("Missing BOT_TOKEN or CHAT_ID in environment variables")
+# ================== DATA HELPERS ==================
+def load_json(file, default):
+    return json.load(open(file, "r", encoding="utf-8")) if os.path.exists(file) else default
 
-# ================== LOAD DATA ==================
-if os.path.exists(DATA_FILE):
-    with open(DATA_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
-else:
-    data = {"last_jobs": []}
-
-def save_data():
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
+def save_json(file, data):
+    with open(file, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-if os.path.exists(USERS_FILE):
-    with open(USERS_FILE, "r") as f:
-        users = json.load(f)
-else:
-    users = []
+data = load_json(DATA_FILE, {"last_jobs": []})
+users = load_json(USERS_FILE, [])
+stats = load_json(STATS_FILE, {"total": 0, "platforms": {}, "keywords": {}})
 
-def save_users():
-    with open(USERS_FILE, "w") as f:
-        json.dump(users, f)
+# ================== SCRAPERS (THE COMMAND CENTERS) ==================
 
-# ================== TELEGRAM FUNCTIONS ==================
-def send_private_message(chat_id, text):
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+def fetch_nafezly():
+    """كشّاف موقع نفذلي"""
+    jobs = []
     try:
-        requests.post(url, data={
-            "chat_id": chat_id,
-            "text": text
-        })
-    except Exception as e:
-        print(f"Error sending to {chat_id}: {e}")
-
-def get_updates():
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates"
-    try:
-        response = requests.get(url).json()
-        for result in response.get("result", []):
-            message = result.get("message")
-            if message:
-                chat_id = str(message["chat"]["id"])
-                text = message.get("text", "")
-
-                # التصحيح هنا: لازم الكود اللي تحت الـ if يكون واخد مسافة لداخل
-                if text == "/start":
-                    if chat_id not in users:
-                        users.append(chat_id)
-                        save_users()
-
-                        # رسالة للمستخدم الجديد
-                        send_private_message(
-                            chat_id,
-                            "✅ You are now subscribed to job alerts!"
-                        )
-
-                        # إشعار للأدمن (إنت)
-                        admin_message = f"🚀 New User Joined\n\n👤 User ID: {chat_id}\n📛 Username: @{message['from'].get('username', 'NoUsername')}"
-                        send_private_message(CHAT_ID, admin_message)
-    except Exception as e:
-        print("Update Error:", e)
-
-def send_message_to_all(text):
-    for user in users:
-        send_private_message(user, text)
-
-# ================== SCRAPING ==================
-def get_nafezly_jobs():
-    url = "https://nafezly.com/projects"
-    try:
-        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
+        r = requests.get("https://nafezly.com/projects", headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
         soup = BeautifulSoup(r.text, "html.parser")
-        jobs = []
         for a in soup.find_all("a"):
-            title = a.text.strip()
-            href = a.get("href", "")
+            title, href = a.text.strip(), a.get("href", "")
             if title and "/projects/" in href:
-                if href.startswith("/"):
-                    href = "https://nafezly.com" + href
-                jobs.append({
-                    "title": title,
-                    "link": href,
-                    "source": "Nafezly"
-                })
-        return jobs
-    except:
-        return []
+                link = "https://nafezly.com" + href if href.startswith("/") else href
+                jobs.append({"title": title, "link": link, "source": "Nafezly"})
+    except: pass
+    return jobs
 
-# ================== CORE LOGIC ==================
-def check_jobs():
-    jobs = get_nafezly_jobs()
-    for job in jobs:
-        unique_id = job["title"] + job["source"]
-        if unique_id not in data["last_jobs"]:
-            message = f"🚀 NEW JOB ALERT\n\n📌 {job['title']}\n🌍 Source: {job['source']}\n🔗 {job['link']}"
-            send_message_to_all(message)
-            data["last_jobs"].append(unique_id)
-            data["last_jobs"] = data["last_jobs"][-200:]
-            save_data()
+def fetch_mostaql():
+    """كشّاف موقع مستقل"""
+    jobs = []
+    try:
+        r = requests.get("https://mostaql.com/projects", headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        soup = BeautifulSoup(r.text, "html.parser")
+        for link in soup.select('a[href*="/project/"]'):
+            title, href = link.text.strip(), link.get("href", "")
+            if title and len(title) > 10:
+                jobs.append({"title": title, "link": href, "source": "Mostaql"})
+    except: pass
+    return jobs
 
-# ================== START ==================
-send_private_message(CHAT_ID, "🤖 Public Job Bot Started Successfully")
+def fetch_khamsat():
+    """كشّاف مجتمع خمسات (طلبات الخدمات غير الموجودة)"""
+    jobs = []
+    try:
+        r = requests.get("https://khamsat.com/community/requests", headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        soup = BeautifulSoup(r.text, "html.parser")
+        for link in soup.select('a[href*="/community/requests/"]'):
+            title = link.text.strip()
+            if title and len(title) > 10:
+                jobs.append({"title": title, "link": link.get("href"), "source": "Khamsat"})
+    except: pass
+    return jobs
+
+# ================== MARKET INSIGHTS LOGIC ==================
+
+def process_stats(job):
+    stats["total"] += 1
+    stats["platforms"][job["source"]] = stats["platforms"].get(job["source"], 0) + 1
+    
+    # كلمات مفتاحية للتحليل (تقدر تزودها)
+    key_tags = ["برمجة", "python", "رياضيات", "security", "ترجمة", "تصميم", "excel"]
+    for tag in key_tags:
+        if tag in job["title"].lower():
+            stats["keywords"][tag] = stats["keywords"].get(tag, 0) + 1
+    save_json(STATS_FILE, stats)
+
+# ================== CORE ENGINE ==================
+
+def check_for_updates():
+    # جمع كل المشاريع من كل المصادر
+    all_found = fetch_nafezly() + fetch_mostaql() + fetch_khamsat()
+    
+    for job in all_found:
+        if job["link"] not in data["last_jobs"]:
+            process_stats(job)
+            
+            alert = f"🌟 مشروع جديد مكتشف!\n\n📌 {job['title']}\n🏢 المصدر: {job['source']}\n🔗 {job['link']}"
+            
+            # إرسال للكل
+            for u in users:
+                send_telegram(u, alert)
+            
+            data["last_jobs"].append(job["link"])
+            data["last_jobs"] = data["last_jobs"][-500:] # حفظ آخر 500 لمنع التكرار
+            save_json(DATA_FILE, data)
+
+def send_telegram(id, txt):
+    requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", data={"chat_id": id, "text": txt})
+
+# ================== START EXECUTION ==================
+print("🚀 Newton Scout Global Scraper is active...")
 
 while True:
     try:
-        get_updates()
-        check_jobs()
-        time.sleep(30) # زودت الوقت شوية عشان الأمان
+        check_for_updates()
+        # وقت الانتظار 5 دقائق (300 ثانية) إلزامي لتجنب الـ Ban من مستقل
+        time.sleep(300) 
     except Exception as e:
-        print("ERROR:", e)
-        time.sleep(20)
+        print(f"Alert: {e}")
+        time.sleep(60)
