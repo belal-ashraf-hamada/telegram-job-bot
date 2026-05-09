@@ -77,38 +77,51 @@ def fetch_jobs():
             continue
     return jobs
 
-# ================== MAIN ENGINE ==================
-# رسالة تأكيد عند التشغيل (بتروح للأدمن مباشرة)
+# ================== MAIN ENGINE (INSTANT MODE) ==================
 if ADMIN_ID:
-    send_telegram(ADMIN_ID, "🚀 نيوتن شغال دلوقتي وبيراقب (مستقل - نفذلي - خمسات)")
+    send_telegram(ADMIN_ID, "🚀 وضع الصيد اللحظي مفعل.. البوت هيبعتلك المشروع أول ما ينزل فوراً.")
 
-print("🚀 Newton Global Scraper is RUNNING...")
+print("🚀 Newton Global Scraper is RUNNING (Instant Mode)...")
 
 while True:
     try:
-        # 1. شوف لو فيه مستخدمين جدد
+        # 1. تحديث قائمة المستخدمين
         check_for_new_users()
         
-        # 2. ابحث عن شغل جديد
+        # 2. جلب المشاريع من المواقع
         found_jobs = fetch_jobs()
-        for job in found_jobs:
+        
+        # ترتيب المشاريع من الأقدم للأحدث (عشان يبعت الجديد في الآخر)
+        for job in reversed(found_jobs): 
             if job["link"] not in data["last_jobs"]:
+                
+                # --- (التطوير المهم هنا) ---
+                # لو البوت لسه فاتح (القائمة فاضية)، هيسجل المشاريع الحالية كأنها "قديمة" 
+                # عشان ميبعتش 50 رسالة Spam أول ما يشتغل.
+                if len(data["last_jobs"]) < 10: 
+                    data["last_jobs"].append(job["link"])
+                    continue
+
+                # إرسال الرسالة فوراً للمشروع الجديد "فقط"
                 msg = f"🌟 مشروع جديد ({job['source']})\n\n📌 {job['title']}\n🔗 {job['link']}"
                 
-                # إرسال لكل الناس اللي سجلت
                 for user_id in users:
                     send_telegram(user_id, msg)
                 
-                # لو إنت (الأدمن) مش في قائمة الـ users، ابعتلك برضه
-                if ADMIN_ID not in users:
+                if ADMIN_ID and ADMIN_ID not in users:
                     send_telegram(ADMIN_ID, msg)
-                
+
+                # حفظ الرابط فوراً في الملف عشان ميتكررش
                 data["last_jobs"].append(job["link"])
-                data["last_jobs"] = data["last_jobs"][-200:]
+                data["last_jobs"] = data["last_jobs"][-500:] # ذاكرة أكبر لـ 500 مشروع
                 save_json(DATA_FILE, data)
+                
+                # تأخير ثانية واحدة بين الرسايل لو فيه كذا مشروع نزلوا مع بعض
+                time.sleep(1)
+
+        # 3. وقت الانتظار (خليته دقيقتين عشان يلقط الشغل أسرع)
+        time.sleep(120) 
         
-        # 3. انتظر شوية (خليتها 3 دقايق للتوازن)
-        time.sleep(180) 
     except Exception as e:
         print(f"Loop Error: {e}")
         time.sleep(30)
